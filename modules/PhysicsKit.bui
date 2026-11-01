@@ -1,0 +1,283 @@
+Private Sub PhysicsRange(value As Double, minimum As Double, maximum As Double, label As String)
+    If Not (value >= minimum And value <= maximum) Then Throw New InvalidArgumentException(label + " is nonfinite or outside bounds")
+End Sub
+
+''' A circle with immutable shape/material and explicitly mutable position/velocity.
+Public Class PhysicsCircle
+    Private Property mX As Double
+    Private Property mY As Double
+    Private Property mVX As Double
+    Private Property mVY As Double
+    Private Property mRadius As Double
+    Private Property mMass As Double
+    Private Property mRestitution As Double
+
+    Public Sub Constructor(x As Double, y As Double, radius As Double, mass As Double = 1.0, restitution As Double = 1.0)
+        PhysicsRange(radius, 0.000001, 1000000.0, "Radius")
+        If mass <> 0.0 Then PhysicsRange(mass, 0.000001, 1000000.0, "Mass")
+        PhysicsRange(restitution, 0.0, 1.0, "Restitution")
+        mRadius = radius
+        mMass = mass
+        mRestitution = restitution
+        Me.SetPosition(x, y)
+    End Sub
+
+    Public Property X As Double
+        Get
+            Return mX
+        End Get
+    End Property
+    Public Property Y As Double
+        Get
+            Return mY
+        End Get
+    End Property
+    Public Property VelocityX As Double
+        Get
+            Return mVX
+        End Get
+    End Property
+    Public Property VelocityY As Double
+        Get
+            Return mVY
+        End Get
+    End Property
+    Public Property Radius As Double
+        Get
+            Return mRadius
+        End Get
+    End Property
+    Public Property Mass As Double
+        Get
+            Return mMass
+        End Get
+    End Property
+    Public Property Restitution As Double
+        Get
+            Return mRestitution
+        End Get
+    End Property
+    Public Property InverseMass As Double
+        Get
+            If mMass = 0.0 Then Return 0.0
+            Return 1.0 / mMass
+        End Get
+    End Property
+
+    Public Sub SetPosition(x As Double, y As Double)
+        PhysicsRange(x, -1000000000.0, 1000000000.0, "X")
+        PhysicsRange(y, -1000000000.0, 1000000000.0, "Y")
+        mX = x
+        mY = y
+    End Sub
+
+    Public Sub SetVelocity(x As Double, y As Double)
+        If mMass = 0.0 And (x <> 0.0 Or y <> 0.0) Then Throw New InvalidArgumentException("Static circles cannot have velocity")
+        PhysicsRange(x, -1000000.0, 1000000.0, "Velocity X")
+        PhysicsRange(y, -1000000.0, 1000000.0, "Velocity Y")
+        mVX = x
+        mVY = y
+    End Sub
+End Class
+
+''' Immovable axis-aligned rectangle.
+Public Class PhysicsBox
+    Private Property mLeft As Double
+    Private Property mTop As Double
+    Private Property mRight As Double
+    Private Property mBottom As Double
+    Private Property mRestitution As Double
+
+    Public Sub Constructor(left As Double, top As Double, right As Double, bottom As Double, restitution As Double = 1.0)
+        PhysicsRange(left, -1000000000.0, 1000000000.0, "Box left")
+        PhysicsRange(top, -1000000000.0, 1000000000.0, "Box top")
+        PhysicsRange(right, -1000000000.0, 1000000000.0, "Box right")
+        PhysicsRange(bottom, -1000000000.0, 1000000000.0, "Box bottom")
+        PhysicsRange(restitution, 0.0, 1.0, "Box restitution")
+        If right <= left Or bottom <= top Then Throw New InvalidArgumentException("Box must have positive dimensions")
+        mLeft = left
+        mTop = top
+        mRight = right
+        mBottom = bottom
+        mRestitution = restitution
+    End Sub
+    Public Property Left As Double
+        Get
+            Return mLeft
+        End Get
+    End Property
+    Public Property Top As Double
+        Get
+            Return mTop
+        End Get
+    End Property
+    Public Property Right As Double
+        Get
+            Return mRight
+        End Get
+    End Property
+    Public Property Bottom As Double
+        Get
+            Return mBottom
+        End Get
+    End Property
+    Public Property Restitution As Double
+        Get
+            Return mRestitution
+        End Get
+    End Property
+End Class
+
+Private Sub ResolveCirclePair(a As PhysicsCircle, b As PhysicsCircle)
+    Dim totalInverse As Double = a.InverseMass + b.InverseMass
+    If totalInverse = 0.0 Then Return
+    Dim dx As Double = b.X - a.X
+    Dim dy As Double = b.Y - a.Y
+    Dim distance As Double = Math.Sqrt(dx * dx + dy * dy)
+    Dim radii As Double = a.Radius + b.Radius
+    If distance > radii Then Return
+    Dim nx As Double = 1.0
+    Dim ny As Double = 0.0
+    If distance > 0.0 Then
+        nx = dx / distance
+        ny = dy / distance
+    End If
+    Dim penetration As Double = radii - distance
+    If a.Mass <> 0.0 Then a.SetPosition(a.X - nx * penetration * a.InverseMass / totalInverse, a.Y - ny * penetration * a.InverseMass / totalInverse)
+    If b.Mass <> 0.0 Then b.SetPosition(b.X + nx * penetration * b.InverseMass / totalInverse, b.Y + ny * penetration * b.InverseMass / totalInverse)
+    Dim relativeSpeed As Double = (b.VelocityX - a.VelocityX) * nx + (b.VelocityY - a.VelocityY) * ny
+    If relativeSpeed >= 0.0 Then Return
+    Dim restitution As Double = Math.Min(a.Restitution, b.Restitution)
+    Dim impulse As Double = -(1.0 + restitution) * relativeSpeed / totalInverse
+    If a.Mass <> 0.0 Then a.SetVelocity(a.VelocityX - impulse * a.InverseMass * nx, a.VelocityY - impulse * a.InverseMass * ny)
+    If b.Mass <> 0.0 Then b.SetVelocity(b.VelocityX + impulse * b.InverseMass * nx, b.VelocityY + impulse * b.InverseMass * ny)
+End Sub
+
+Private Sub ResolveCircleBox(circle As PhysicsCircle, box As PhysicsBox)
+    If circle.Mass = 0.0 Then Return
+    Dim closestX As Double = Math.Max(box.Left, Math.Min(box.Right, circle.X))
+    Dim closestY As Double = Math.Max(box.Top, Math.Min(box.Bottom, circle.Y))
+    Dim dx As Double = circle.X - closestX
+    Dim dy As Double = circle.Y - closestY
+    Dim distance As Double = Math.Sqrt(dx * dx + dy * dy)
+    Dim nx As Double
+    Dim ny As Double
+    Dim penetration As Double
+    If distance > 0.0 Then
+        If distance > circle.Radius Then Return
+        nx = dx / distance
+        ny = dy / distance
+        penetration = circle.Radius - distance
+    Else
+        ' Center inside/on box: choose nearest face, ties left/top/right/bottom.
+        Dim nearest As Double = circle.X - box.Left
+        nx = -1.0
+        If circle.Y - box.Top < nearest Then
+            nearest = circle.Y - box.Top
+            nx = 0.0
+            ny = -1.0
+        End If
+        If box.Right - circle.X < nearest Then
+            nearest = box.Right - circle.X
+            nx = 1.0
+            ny = 0.0
+        End If
+        If box.Bottom - circle.Y < nearest Then
+            nearest = box.Bottom - circle.Y
+            nx = 0.0
+            ny = 1.0
+        End If
+        penetration = circle.Radius + nearest
+    End If
+    circle.SetPosition(circle.X + nx * penetration, circle.Y + ny * penetration)
+    Dim speed As Double = circle.VelocityX * nx + circle.VelocityY * ny
+    If speed < 0.0 Then
+        Dim impulse As Double = (1.0 + Math.Min(circle.Restitution, box.Restitution)) * speed
+        circle.SetVelocity(circle.VelocityX - impulse * nx, circle.VelocityY - impulse * ny)
+    End If
+End Sub
+
+''' Fixed-step, insertion-ordered solver. One Step is staged and committed atomically.
+Public Class PhysicsWorld
+    Private Property mCircles As Array Of PhysicsCircle = []
+    Private Property mBoxes As Array Of PhysicsBox = []
+    Private Property mDelta As Double
+    Private Property mIterations As Integer
+    Private Property mGravityX As Double
+    Private Property mGravityY As Double
+
+    Public Sub Constructor(delta As Double = 0.01666666666666667, iterations As Integer = 4)
+        PhysicsRange(delta, 0.000001, 0.1, "Fixed delta")
+        If iterations < 1 Or iterations > 8 Then Throw New InvalidArgumentException("Iterations must be 1..8")
+        mDelta = delta
+        mIterations = iterations
+    End Sub
+    Public Property FixedDelta As Double
+        Get
+            Return mDelta
+        End Get
+    End Property
+    Public Property CircleCount As Integer
+        Get
+            Return Array.Count(mCircles)
+        End Get
+    End Property
+    Public Property BoxCount As Integer
+        Get
+            Return Array.Count(mBoxes)
+        End Get
+    End Property
+    Public Sub SetGravity(x As Double, y As Double)
+        PhysicsRange(x, -1000000.0, 1000000.0, "Gravity X")
+        PhysicsRange(y, -1000000.0, 1000000.0, "Gravity Y")
+        mGravityX = x
+        mGravityY = y
+    End Sub
+    Public Sub AddCircle(circle As PhysicsCircle)
+        If circle Is Nil Then Throw New InvalidArgumentException("Circle must not be Nil")
+        If Array.Count(mCircles) >= 256 Then Throw New InvalidArgumentException("World circle limit is 256")
+        For Each existing As PhysicsCircle In mCircles
+            If existing Is circle Then Throw New InvalidArgumentException("Circle already belongs to this world")
+        Next
+        Array.Append(mCircles, circle)
+    End Sub
+    Public Sub AddBox(box As PhysicsBox)
+        If box Is Nil Then Throw New InvalidArgumentException("Box must not be Nil")
+        If Array.Count(mBoxes) >= 64 Then Throw New InvalidArgumentException("World box limit is 64")
+        For Each existing As PhysicsBox In mBoxes
+            If existing Is box Then Throw New InvalidArgumentException("Box already belongs to this world")
+        Next
+        Array.Append(mBoxes, box)
+    End Sub
+    Public Sub Clear()
+        Array.Clear(mCircles)
+        Array.Clear(mBoxes)
+    End Sub
+    Public Sub Step()
+        Dim working() As PhysicsCircle
+        For Each circle As PhysicsCircle In mCircles
+            Dim copy As New PhysicsCircle(circle.X, circle.Y, circle.Radius, circle.Mass, circle.Restitution)
+            If circle.Mass = 0.0 Then
+                copy.SetVelocity(0.0, 0.0)
+            Else
+                copy.SetVelocity(circle.VelocityX + mGravityX * mDelta, circle.VelocityY + mGravityY * mDelta)
+                copy.SetPosition(circle.X + copy.VelocityX * mDelta, circle.Y + copy.VelocityY * mDelta)
+            End If
+            Array.Append(working, copy)
+        Next
+        For iteration As Integer = 1 To mIterations
+            For i As Integer = 0 To Array.Count(working) - 1
+                For j As Integer = i + 1 To Array.Count(working) - 1
+                    ResolveCirclePair(working(i), working(j))
+                Next
+                For Each box As PhysicsBox In mBoxes
+                    ResolveCircleBox(working(i), box)
+                Next
+            Next
+        Next
+        For i As Integer = 0 To Array.Count(working) - 1
+            mCircles(i).SetPosition(working(i).X, working(i).Y)
+            mCircles(i).SetVelocity(working(i).VelocityX, working(i).VelocityY)
+        Next
+    End Sub
+End Class
