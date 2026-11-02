@@ -1,6 +1,6 @@
 # Simulate fixed-step circle and static-box collisions
 
-Pure Buoy fixed-step circle simulation with circle/circle impulses and immovable
+Fixed-step circle simulation with circle/circle impulses and immovable
 axis-aligned box contacts. `Import physicskit` works from the sealed package.
 There are no native dependencies or coupling to SpriteKit. A caller can use each
 circle's position to update a sprite independently of rendering.
@@ -48,8 +48,6 @@ On your own machine, install Buoy and run:
 ```sh
 buoy ai init --both
 ```
-
-The generated agent files and editor settings stay local and are ignored by Git.
 
 ## Contributing
 

@@ -64,9 +64,3 @@ order-dependent and does not guarantee an exact stacked equilibrium. Opposing or
 overlapping static boxes can leave unresolved penetration. Static/static contacts
 are ignored. Restitution tests establish isolated impacts; simultaneous contacts
 can differ from a full constraint solver.
-
-## Verification
-
-
-Maintainers run the private validation suite before release. See the repository README for public build instructions.
-
