@@ -1,4 +1,4 @@
-# Fixed-step circle vs static-box collisions
+# Circle vs box collisions
 
 Fixed-step circle simulation with circle/circle impulses and immovable
 axis-aligned box contacts. `Import physicskit` works from the sealed package.
